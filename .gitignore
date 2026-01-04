@@ -1,0 +1,4 @@
+# Ignore project config
+/.vscode
+# Ignore archive files
+*.tar.gz
