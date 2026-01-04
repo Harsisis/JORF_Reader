@@ -2,3 +2,4 @@
 /.vscode
 # Ignore archive files
 *.tar.gz
+*.xlsx
