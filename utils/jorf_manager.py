@@ -11,7 +11,7 @@ class JORF_MANAGER:
     """Download available JORF archive from given url
 
     Returns:
-        Boolean: return the status of the download True if all available files are donwloaded, false otherwise
+        Boolean: return the status of the download True if all available files are downloaded, False otherwise
     """
     @staticmethod
     def download_tar_gz_files(download_dir, base_url="https://echanges.dila.gouv.fr/OPENDATA/JORF/?C=M;O=D"):
@@ -36,12 +36,13 @@ class JORF_MANAGER:
                     print(f"{href} already exist, file will not be downloaded again.")
         return True
 
-    """Open and read all JORF archives within provided folder and write result in excel file
+    """Open and read all JORF archives within provided folder to get all JORF XML files
 
+        Returns:
+            Boolean: return the status of the extraction True if all available files are extracted and renammed correctly, False otherwise
     """
     @staticmethod
     def read_tar_gz_files(download_dir, destination_dir):
-        
         for archive_name in os.listdir(download_dir):
             if archive_name.endswith(".tar.gz"):
                 archive_path = os.path.join(download_dir, archive_name)
@@ -65,7 +66,7 @@ class JORF_MANAGER:
                                 date = date_publi.text
                                 print(f"Published Date: {date}")
                             else:
-                                date = "inconnu"
+                                date = "NA"
                                 print(f"No date found within XML {member.path}")
 
                             # Renommer le fichier avec la date
@@ -78,6 +79,8 @@ class JORF_MANAGER:
 
                         except ET.ParseError as e:
                             print(f"Parsing Error on {member.path}: {e}")
+                            return False
+        return True
 
 
     @staticmethod
