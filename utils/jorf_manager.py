@@ -69,11 +69,9 @@ class JORF_MANAGER:
                                 date = "NA"
                                 print(f"No date found within XML {member.path}")
 
-                            # Renommer le fichier avec la date
                             new_filename = f"JORF_{date}.xml"
                             new_filepath = os.path.join(destination_dir, new_filename)
 
-                            # Déplacer et renommer le fichier
                             shutil.move(xml_path, new_filepath)
                             print(f"File renammed to {new_filename}")
 
