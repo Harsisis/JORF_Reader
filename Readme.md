@@ -13,5 +13,5 @@ pip install -r requirements.txt
 
 ## Prérequis
 Ce script a été créé pour une utilisation avec:
-- python `3.13.9`
-- pip `25.3`
+- python: `3.13.9`
+- pip: `25.3`

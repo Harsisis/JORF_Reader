@@ -1,5 +1,6 @@
 # Ignore project config
 /.vscode
-# Ignore archive files
+# Ignore files
 *.tar.gz
 *.xlsx
+*.xml
