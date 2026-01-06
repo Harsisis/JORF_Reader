@@ -1,10 +1,11 @@
 from utils.jorf_manager import JORF_MANAGER
+from utils.excel import ExcelManager
+from dotenv import load_dotenv
 
-if __name__ == "__main__":
-    download_dir = "jorf_tar_gz"
-    destination_dir = "jorf_xml"
+load_dotenv()
 
-    done = True #JORF_MANAGER.download_tar_gz_files(download_dir)
-    
-    if done == True:
-        JORF_MANAGER.read_tar_gz_files(download_dir, destination_dir)
+#JORF_MANAGER.download_tar_gz_files()
+#JORF_MANAGER.read_tar_gz_files()
+data = JORF_MANAGER.read_xml_folder()
+
+ExcelManager.save_to_excel(data)
