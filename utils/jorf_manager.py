@@ -5,9 +5,23 @@ from urllib.parse import urljoin
 import tarfile
 import xml.etree.ElementTree as ET
 import shutil
+import unicodedata
 
 
 class JORF_MANAGER:
+
+    _DECRET_TXT = "decret"
+    _ARRETE_TXT = "arrete"
+    _CIRCULAIRE_TXT = "circulaire"
+
+    _XML_TAG_DATE_PUBLICATION = ".//DATE_PUBLI"
+    _XML_TAG_TITLE = ".//TITRE"
+    _XML_ATTR_TITRETXT = "titretxt"
+
+    _XML_TAG_QUERY_LINKS = ".//TM[@niv='2'][TITRE_TM='Décrets, arrêtés, circulaires']//LIEN_TXT"
+
+
+
     """Download available JORF archive from given url
 
     Returns:
@@ -55,7 +69,7 @@ class JORF_MANAGER:
 
                 with tarfile.open(archive_path, "r:gz") as tar:
                     for member in filter(lambda value: value.isfile() and "JORF/CONT/" in value.name and value.name.endswith(".xml"), tar.getmembers()):
-                        print(f"Extracting: ${member.name}...")
+                        print(f"Extracting: {member.name}...")
                         member.path = os.path.basename(member.name)
                         tar.extract(member, path=destination_dir)
                         xml_path = os.path.join(destination_dir, member.name)
@@ -64,7 +78,7 @@ class JORF_MANAGER:
                             tree = ET.parse(xml_path)
                             root = tree.getroot()
 
-                            date_publi = root.find(".//DATE_PUBLI")
+                            date_publi = root.find(JORF_MANAGER._XML_TAG_DATE_PUBLICATION)
                             if date_publi is not None:
                                 date = date_publi.text
                                 print(f"Published Date found: {date}")
@@ -72,17 +86,44 @@ class JORF_MANAGER:
                                 date = "NA"
                                 print(f"No date found within XML {member.path}")
 
-                            new_filename = f"JORF_{date}.xml"
-                            new_filepath = os.path.join(destination_dir, new_filename)
-
-                            shutil.move(xml_path, new_filepath)
-                            print(f"File renammed to {new_filename}")
+                            index = None
+                            filepath_indexable = JORF_MANAGER._get_file_path(destination_dir, date, index)                           
+                            while os.path.exists(filepath_indexable):
+                                print("File already exist and will be replaced")
+                                if index is None: index = 1 
+                                else: index +=1
+                                filepath_indexable = JORF_MANAGER._get_file_path(destination_dir, date, index)
+                            
+                            shutil.move(xml_path, filepath_indexable)
+                            print(f"File renammed to {os.path.basename(filepath_indexable)}")
 
                         except ET.ParseError as e:
                             print(f"Parsing Error on {member.path}: {e}")
 
 
 
+    """@Private
+    Return file path built using destination_dir, date and index
+
+    @param destination_dir
+    @param date
+    @param index
+
+    Returns:
+        str: file path
+    """
+    @staticmethod
+    def _get_file_path(destination_dir, date, index) -> str:
+        new_filename = f"JORF_{date}{ f'_{index}' if index is not None else '' }.xml"
+        return os.path.join(destination_dir, new_filename)
+
+
+
+    """Read all XML present in dedicated folder and try to parse them to create dataset
+
+    Returns:
+        list: list of JORF summary object
+    """
     @staticmethod
     def read_xml_folder():
         xml_folder = os.getenv('XML_FOLDER_NAME')
@@ -90,38 +131,98 @@ class JORF_MANAGER:
 
         for xml_file in os.listdir(xml_folder):
             if xml_file.endswith(".xml"):
-                print(f"Analysing file ${xml_file}...")
+                print(f"Analysing file {xml_file}...")
                 try:
                     tree = ET.parse(os.path.join(xml_folder, xml_file))
                     root = tree.getroot()
 
-                    lien_txts = []
-                    for titre_tm in root.iter("TITRE_TM"):
-                        if titre_tm.text == "Décrets, arrêtés, circulaires":
-                            parent = titre_tm.getparent() #TODO
-                            if parent is not None:
-                                for sibling in parent.iter():
-                                    if sibling.tag == "TM" and sibling.get("niv") == "3":
-                                        for tm in sibling.iter():
-                                            if tm.tag == "LIEN_TXT":
-                                                lien_txts.append(tm.get("titretxt"))
+                    lien_decret_txts = []
+                    lien_arrete_txts = []
+                    lien_circulaire_txts = []
+                    lien_autre_txts = []
+
+                    link_nodes = root.findall(JORF_MANAGER._XML_TAG_QUERY_LINKS)
+                    if link_nodes is not None:
+                        print(f"{len(link_nodes)} link(s) found")
+                        for lien_txt in link_nodes:
+                            normalized = JORF_MANAGER.normalize_text(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                            if JORF_MANAGER._DECRET_TXT in normalized:
+                                lien_decret_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                            elif JORF_MANAGER._ARRETE_TXT in normalized:
+                                lien_arrete_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                            elif JORF_MANAGER._CIRCULAIRE_TXT in normalized:
+                                lien_circulaire_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                            else:
+                                lien_autre_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+
                     
-                    print(f"${len(lien_txts)} link found...")
+                    print(f"{len(lien_decret_txts)} 'Décret(s)' found...")
+                    print(f"{len(lien_arrete_txts)} 'Arrêté(s)' found...")
+                    print(f"{len(lien_circulaire_txts)} 'Circulaire(s)' found...")
+                    print(f"{len(lien_autre_txts)} remaining link(s) found...")
 
                     data.append({
                             "titre": JORF_MANAGER._xml_get_title(root),
-                            "date_publication": JORF_MANAGER._xml_get_date_publication(root),
-                            "liens": lien_txts
+                            "date publication": JORF_MANAGER._xml_get_date_publication(root),
+                            "nb decrets": len(lien_decret_txts),
+                            "decrets": lien_decret_txts,
+                            "nb arretes": len(lien_arrete_txts),
+                            "arretes": lien_arrete_txts,
+                            "nb circulaires": len(lien_circulaire_txts),
+                            "circulaires": lien_circulaire_txts,
+                            "nb autres":  len(lien_autre_txts),
+                            "autres":  lien_autre_txts
                     })
                 except ET.ParseError as e:
                     print(f"Reading Error on {xml_file}: {e}")
+
+                print(f"Analysis done for file {xml_file}\n")
         return data
     
+
+
+    """Normalize text
+
+    @param text
+
+    Returns:
+        str: normalized text
+    """
+    @staticmethod
+    def normalize_text(text: str) -> str:
+        text = unicodedata.normalize("NFD", text)
+        text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+        return text.lower()
+
+
+
+    """Get element title from content
+
+    @param xml_content
+
+    Returns:
+        str: JORF title element
+    """
     @staticmethod
     def _xml_get_title(xml_content) -> str:
-        return xml_content.find(".//TITRE")
+        node = xml_content.find(JORF_MANAGER._XML_TAG_TITLE)
+        if node is not None:
+            return node.text
+        return "NA"
 
+
+
+    """Get element title from content
+
+    @param xml_content
+
+    Returns:
+        str: JORF title element
+    """
     @staticmethod
     def _xml_get_date_publication(xml_content) -> str:
-        return xml_content.find(".//DATE_PUBLI")
+        node = xml_content.find(JORF_MANAGER._XML_TAG_DATE_PUBLICATION)
+        if node is not None:
+            return node.text
+        return "NA"
     
