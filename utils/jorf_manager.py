@@ -6,6 +6,7 @@ import tarfile
 import xml.etree.ElementTree as ET
 import shutil
 import unicodedata
+from datetime import datetime, date
 
 
 class JORF_MANAGER:
@@ -86,13 +87,7 @@ class JORF_MANAGER:
                                 date = "NA"
                                 print(f"No date found within XML {member.path}")
 
-                            index = None
-                            filepath_indexable = JORF_MANAGER._get_file_path(destination_dir, date, index)                           
-                            while os.path.exists(filepath_indexable):
-                                print("File already exist and will be replaced")
-                                if index is None: index = 1 
-                                else: index +=1
-                                filepath_indexable = JORF_MANAGER._get_file_path(destination_dir, date, index)
+                            filepath_indexable = JORF_MANAGER._get_file_path(destination_dir, date)                           
                             
                             shutil.move(xml_path, filepath_indexable)
                             print(f"File renammed to {os.path.basename(filepath_indexable)}")
@@ -103,29 +98,33 @@ class JORF_MANAGER:
 
 
     """@Private
-    Return file path built using destination_dir, date and index
+    Return file path built using destination_dir and date
 
     @param destination_dir
     @param date
-    @param index
 
     Returns:
         str: file path
     """
     @staticmethod
-    def _get_file_path(destination_dir, date, index) -> str:
-        new_filename = f"JORF_{date}{ f'_{index}' if index is not None else '' }.xml"
+    def _get_file_path(destination_dir, date_value) -> str:
+        new_filename = f"JORF_{date_value}.xml"
         return os.path.join(destination_dir, new_filename)
 
 
 
     """Read all XML present in dedicated folder and try to parse them to create dataset
+    If provided, start_date and end_date will restrict the selection
+    Document with no "Décret", "Arrêté" or "Circulaire" will be ignored and not added to the dataset 
 
+    @param start_date
+    @param end_date
+    
     Returns:
         list: list of JORF summary object
     """
     @staticmethod
-    def read_xml_folder():
+    def read_xml_folder(start_date = None, end_date = None):
         xml_folder = os.getenv('XML_FOLDER_NAME')
         data = []
 
@@ -136,43 +135,50 @@ class JORF_MANAGER:
                     tree = ET.parse(os.path.join(xml_folder, xml_file))
                     root = tree.getroot()
 
-                    lien_decret_txts = []
-                    lien_arrete_txts = []
-                    lien_circulaire_txts = []
-                    lien_autre_txts = []
+                    publication_date = JORF_MANAGER._xml_get_date_publication(root)
+                    publication_date_formatted = date.fromisoformat(publication_date)
+                    if (start_date is not None and publication_date_formatted >= start_date) and (end_date is not None and publication_date_formatted <= end_date):
+                        lien_decret_txts = []
+                        lien_arrete_txts = []
+                        lien_circulaire_txts = []
+                        lien_autre_txts = []
 
-                    link_nodes = root.findall(JORF_MANAGER._XML_TAG_QUERY_LINKS)
-                    if link_nodes is not None:
-                        print(f"{len(link_nodes)} link(s) found")
-                        for lien_txt in link_nodes:
-                            normalized = JORF_MANAGER.normalize_text(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
-                            if JORF_MANAGER._DECRET_TXT in normalized:
-                                lien_decret_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
-                            elif JORF_MANAGER._ARRETE_TXT in normalized:
-                                lien_arrete_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
-                            elif JORF_MANAGER._CIRCULAIRE_TXT in normalized:
-                                lien_circulaire_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
-                            else:
-                                lien_autre_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                        link_nodes = root.findall(JORF_MANAGER._XML_TAG_QUERY_LINKS)
+                        if link_nodes is not None:
+                            print(f"{len(link_nodes)} link(s) found")
+                            for lien_txt in link_nodes:
+                                normalized = JORF_MANAGER.normalize_text(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                                if JORF_MANAGER._DECRET_TXT in normalized:
+                                    lien_decret_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                                elif JORF_MANAGER._ARRETE_TXT in normalized:
+                                    lien_arrete_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                                elif JORF_MANAGER._CIRCULAIRE_TXT in normalized:
+                                    lien_circulaire_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
+                                else:
+                                    lien_autre_txts.append(lien_txt.get(JORF_MANAGER._XML_ATTR_TITRETXT))
 
-                    
-                    print(f"{len(lien_decret_txts)} 'Décret(s)' found...")
-                    print(f"{len(lien_arrete_txts)} 'Arrêté(s)' found...")
-                    print(f"{len(lien_circulaire_txts)} 'Circulaire(s)' found...")
-                    print(f"{len(lien_autre_txts)} remaining link(s) found...")
+                        
+                        print(f"{len(lien_decret_txts)} 'Décret(s)' found...")
+                        print(f"{len(lien_arrete_txts)} 'Arrêté(s)' found...")
+                        print(f"{len(lien_circulaire_txts)} 'Circulaire(s)' found...")
+                        print(f"{len(lien_autre_txts)} remaining link(s) found...")
 
-                    data.append({
-                            "titre": JORF_MANAGER._xml_get_title(root),
-                            "date publication": JORF_MANAGER._xml_get_date_publication(root),
-                            "nb decrets": len(lien_decret_txts),
-                            "decrets": lien_decret_txts,
-                            "nb arretes": len(lien_arrete_txts),
-                            "arretes": lien_arrete_txts,
-                            "nb circulaires": len(lien_circulaire_txts),
-                            "circulaires": lien_circulaire_txts,
-                            "nb autres":  len(lien_autre_txts),
-                            "autres":  lien_autre_txts
-                    })
+                        if len(lien_decret_txts) <= 0 and len(lien_arrete_txts) <= 0 and len(lien_circulaire_txts) <= 0:
+                            print(f"{xml_file} does not contain any 'Décret(s)', 'Arrêté(s)' or 'Circulaire(s)' and will not be taken into account")
+                            continue
+
+                        data.append({
+                                "titre": JORF_MANAGER._xml_get_title(root),
+                                "date publication": publication_date,
+                                "nb decrets": len(lien_decret_txts),
+                                "decrets": lien_decret_txts,
+                                "nb arretes": len(lien_arrete_txts),
+                                "arretes": lien_arrete_txts,
+                                "nb circulaires": len(lien_circulaire_txts),
+                                "circulaires": lien_circulaire_txts,
+                                "nb autres":  len(lien_autre_txts),
+                                "autres":  lien_autre_txts
+                        })
                 except ET.ParseError as e:
                     print(f"Reading Error on {xml_file}: {e}")
 
@@ -181,7 +187,8 @@ class JORF_MANAGER:
     
 
 
-    """Normalize text
+    """@Private
+    Normalize text
 
     @param text
 
@@ -196,7 +203,8 @@ class JORF_MANAGER:
 
 
 
-    """Get element title from content
+    """@Private
+    Get element title from content
 
     @param xml_content
 
@@ -212,7 +220,8 @@ class JORF_MANAGER:
 
 
 
-    """Get element title from content
+    """@Private
+    Get element title from content
 
     @param xml_content
 
